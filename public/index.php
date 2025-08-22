@@ -16,25 +16,54 @@
 ================================================================================
 */
 
-// Start the session to manage user authentication.
+<?php
+// public/index.php
+
 session_start();
 
-// --- Database Credentials ---
-$db_server = 'localhost';
-$db_username = 'root';
-$db_password = '';
-$db_name = 'mytube';
+require_once '../src/database.php';
+require_once '../src/helpers.php';
 
-// --- Establish Database Connection ---
-$db = new mysqli($db_server, $db_username, $db_password, $db_name);
-if ($db->connect_error) {
-    if (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
-        header('Content-Type: application/json');
-        echo json_encode(['success' => false, 'message' => 'Database connection failed.']);
-        exit();
-    } else {
-        die("Connection failed: " . $db->connect_error);
-    }
+$request_uri = $_SERVER['REQUEST_URI'];
+$base_path = '/';
+
+// Remove query string from the URI
+if (false !== $pos = strpos($request_uri, '?')) {
+    $request_uri = substr($request_uri, 0, $pos);
+}
+
+// Remove base path from the URI
+$route = str_replace($base_path, '', $request_uri);
+$route = trim($route, '/');
+
+// Handle basic routing
+if ($route === '') {
+    require '../src/controllers/home.php';
+} elseif (preg_match('/watch\/(\w+)/', $route, $matches)) {
+    $video_id = $matches[1];
+    require '../src/controllers/watch.php';
+} elseif ($route === 'login') {
+    require '../src/controllers/login.php';
+} elseif ($route === 'signup') {
+    require '../src/controllers/signup.php';
+} elseif ($route === 'logout') {
+    require '../src/controllers/logout.php';
+} elseif ($route === 'upload') {
+    require '../src/controllers/upload.php';
+} elseif ($route === 'account') {
+    require '../src/controllers/account.php';
+} elseif (preg_match('/channel\/(\w+)/', $route, $matches)) {
+    $username = $matches[1];
+    require '../src/controllers/channel.php';
+} elseif ($route === 'about') {
+    require '../src/controllers/about.php';
+} elseif ($route === 'copyright') {
+    require '../src/controllers/copyright.php';
+} elseif ($route === 'contact') {
+    require '../src/controllers/contact.php';
+} else {
+    http_response_code(404);
+    require '../src/views/404.php';
 }
 
 // --- Helper Functions ---
