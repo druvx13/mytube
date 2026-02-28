@@ -1,0 +1,3 @@
+# uploads directory placeholder
+# The uploads/ directory must exist and be writable by the web server.
+# Actual uploaded files are ignored by .gitignore.

@@ -1,21 +1,24 @@
 <?php
-// Start session to manage admin login state.
+/**
+ * MyTube — Admin Panel
+ * Version 2.0
+ *
+ * Access: /admin.php
+ * Set ADMIN_USER and ADMIN_PASS_HASH below. Generate a hash with:
+ *   php -r "echo password_hash('your_password', PASSWORD_BCRYPT, ['cost'=>12]);"
+ */
 session_start();
+
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/includes/functions.php';
 
 // =============================================================================
 // SECTION 0: CONFIGURATION & SECURITY
 // =============================================================================
 
-// --- Admin Credentials (Password is HASHED) ---
-define('ADMIN_USER', 'admin');
-
-define('ADMIN_PASS_HASH', '$2y....hash');
-
-// Note: DB credentials should be in a separate config file outside the web root in a production environment.
-$db_server = 'localhost';
-$db_username = 'root';
-$db_password = '';
-$db_name = 'mytube';
+// --- Admin Credentials (store a BCRYPT hash, never the plain password) ---
+define('ADMIN_USER',      'admin');
+define('ADMIN_PASS_HASH', '$2y....hash'); // Replace with your own hash
 
 
 // =============================================================================
@@ -66,7 +69,8 @@ if (!isset($_SESSION['is_admin'])) {
 
     <head>
         <meta charset="UTF-8">
-        <title>Admin Login</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Admin Login &mdash; <?php echo htmlspecialchars(APP_NAME); ?></title>
         <script src="https://cdn.tailwindcss.com"></script>
         <style>
             body {
@@ -101,7 +105,7 @@ if (!isset($_SESSION['is_admin'])) {
         <div class="w-full max-w-xs">
             <form class="box shadow-md rounded px-8 pt-6 pb-8 mb-4" method="POST">
                 <input type="hidden" name="action" value="login">
-                <h1 class="text-2xl font-bold mb-4 text-center">MyTube Admin</h1>
+                <h1 class="text-2xl font-bold mb-4 text-center"><?php echo htmlspecialchars(APP_NAME); ?> Admin</h1>
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="username">Username</label>
                     <input class="input-classic w-full" id="username" name="username" type="text" placeholder="Username" required>
@@ -129,22 +133,14 @@ if (!isset($_SESSION['is_admin'])) {
 // SECTION 2: CORE ADMIN LOGIC (for logged-in admins)
 // =============================================================================
 
-// --- Database Connection ---
-$db = new mysqli($db_server, $db_username, $db_password, $db_name);
+// --- Database Connection (credentials from config.php) ---
+require_once __DIR__ . '/includes/db_setup.php';
+$db = new mysqli(DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME);
+$db->set_charset('utf8mb4');
 if ($db->connect_error) {
-    die("Connection failed: " . $db->connect_error);
+    die('Database connection failed. Please check config.php.');
 }
-
-// --- Automatic DB Migrations ---
-$is_admin_check = $db->query("SHOW COLUMNS FROM `users` LIKE 'is_admin'");
-if ($is_admin_check->num_rows == 0) {
-    $db->query("ALTER TABLE `users` ADD `is_admin` TINYINT(1) NOT NULL DEFAULT 0 AFTER `password`");
-}
-$is_banned_check = $db->query("SHOW COLUMNS FROM `users` LIKE 'is_banned'");
-if ($is_banned_check->num_rows == 0) {
-    $db->query("ALTER TABLE `users` ADD `is_banned` TINYINT(1) NOT NULL DEFAULT 0 AFTER `is_admin`");
-}
-$db->query("CREATE TABLE IF NOT EXISTS admin_logs (id INT AUTO_INCREMENT PRIMARY KEY, admin_username VARCHAR(255), action VARCHAR(255), target_info TEXT, ip_address VARCHAR(45), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+run_db_setup($db);
 
 
 // --- Helper Function for Admin Logging ---
@@ -189,8 +185,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stmt->execute();
             $result = $stmt->get_result();
             if ($video = $result->fetch_assoc()) {
-                if (file_exists('uploads/' . $video['filename'])) unlink('uploads/' . $video['filename']);
-                if (file_exists('uploads/' . $video['thumbnail'])) unlink('uploads/' . $video['thumbnail']);
+                if (file_exists(UPLOADS_DIR . $video['filename'])) unlink(UPLOADS_DIR . $video['filename']);
+                if (!empty($video['thumbnail']) && file_exists(UPLOADS_DIR . $video['thumbnail'])) unlink(UPLOADS_DIR . $video['thumbnail']);
             }
             $stmt = $db->prepare("DELETE FROM videos WHERE id = ?");
             $stmt->bind_param("i", $video_id);
@@ -240,7 +236,8 @@ $offset = ($current_page - 1) * $items_per_page;
 
 <head>
     <meta charset="UTF-8">
-    <title>MyTube Admin Panel</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo htmlspecialchars(APP_NAME); ?> Admin Panel</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body {
@@ -330,7 +327,7 @@ $offset = ($current_page - 1) * $items_per_page;
 <body>
     <div class="flex">
         <aside class="w-64 bg-gray-800 text-white min-h-screen p-4 flex flex-col">
-            <h1 class="text-2xl font-bold mb-6">MyTube Admin</h1>
+            <h1 class="text-2xl font-bold mb-6"><?php echo htmlspecialchars(APP_NAME); ?> Admin</h1>
             <nav class="flex-grow">
                 <a href="admin.php?section=dashboard" class="sidebar-link <?php if ($section === 'dashboard') echo 'active'; ?>">Dashboard</a>
                 <a href="admin.php?section=users" class="sidebar-link <?php if ($section === 'users') echo 'active'; ?>">User Management</a>
@@ -385,14 +382,26 @@ $offset = ($current_page - 1) * $items_per_page;
                 <?php break;
 
                 case 'users':
-                    $search = $_GET['search'] ?? '';
-                    $where_clause = '';
+                    $search = trim($_GET['search'] ?? '');
                     if ($search) {
-                        $where_clause = " WHERE username LIKE '%" . $db->real_escape_string($search) . "%'";
+                        $search_term = '%' . $search . '%';
+                        $cnt_stmt = $db->prepare("SELECT COUNT(*) FROM users WHERE username LIKE ?");
+                        $cnt_stmt->bind_param("s", $search_term);
+                        $cnt_stmt->execute();
+                        $total_items = (int)$cnt_stmt->get_result()->fetch_row()[0];
+                        $cnt_stmt->close();
+                        $total_pages = (int)ceil($total_items / $items_per_page);
+                        $u_stmt = $db->prepare("SELECT id, username, email, created_at, is_banned FROM users WHERE username LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?");
+                        $u_stmt->bind_param("sii", $search_term, $items_per_page, $offset);
+                    } else {
+                        $total_items = (int)$db->query("SELECT COUNT(*) FROM users")->fetch_row()[0];
+                        $total_pages = (int)ceil($total_items / $items_per_page);
+                        $u_stmt = $db->prepare("SELECT id, username, email, created_at, is_banned FROM users ORDER BY created_at DESC LIMIT ? OFFSET ?");
+                        $u_stmt->bind_param("ii", $items_per_page, $offset);
                     }
-                    $total_items = $db->query("SELECT COUNT(*) FROM users" . $where_clause)->fetch_row()[0];
-                    $total_pages = ceil($total_items / $items_per_page);
-                    $users = $db->query("SELECT id, username, email, created_at, is_banned FROM users" . $where_clause . " ORDER BY created_at DESC LIMIT $items_per_page OFFSET $offset");
+                    $u_stmt->execute();
+                    $users = $u_stmt->get_result();
+                    $u_stmt->close();
             ?>
                     <h1 class="text-3xl font-bold mb-6">User Management</h1>
                     <form class="mb-4"><input type="hidden" name="section" value="users"><input type="text" name="search" placeholder="Search by username..." class="p-2 border rounded" value="<?php echo htmlspecialchars($search); ?>"><button type="submit" class="p-2 bg-blue-500 text-white rounded">Search</button></form>
@@ -440,14 +449,26 @@ $offset = ($current_page - 1) * $items_per_page;
                 <?php break;
 
                 case 'videos':
-                    $search = $_GET['search'] ?? '';
-                    $where_clause = '';
+                    $search = trim($_GET['search'] ?? '');
                     if ($search) {
-                        $where_clause = " WHERE v.title LIKE '%" . $db->real_escape_string($search) . "%'";
+                        $search_term = '%' . $search . '%';
+                        $vc_stmt = $db->prepare("SELECT COUNT(*) FROM videos v WHERE v.title LIKE ?");
+                        $vc_stmt->bind_param("s", $search_term);
+                        $vc_stmt->execute();
+                        $total_items = (int)$vc_stmt->get_result()->fetch_row()[0];
+                        $vc_stmt->close();
+                        $total_pages = (int)ceil($total_items / $items_per_page);
+                        $vl_stmt = $db->prepare("SELECT v.id, v.thumbnail, v.title, u.username, v.views, v.upload_date FROM videos v JOIN users u ON v.user_id = u.id WHERE v.title LIKE ? ORDER BY v.upload_date DESC LIMIT ? OFFSET ?");
+                        $vl_stmt->bind_param("sii", $search_term, $items_per_page, $offset);
+                    } else {
+                        $total_items = (int)$db->query("SELECT COUNT(*) FROM videos")->fetch_row()[0];
+                        $total_pages = (int)ceil($total_items / $items_per_page);
+                        $vl_stmt = $db->prepare("SELECT v.id, v.thumbnail, v.title, u.username, v.views, v.upload_date FROM videos v JOIN users u ON v.user_id = u.id ORDER BY v.upload_date DESC LIMIT ? OFFSET ?");
+                        $vl_stmt->bind_param("ii", $items_per_page, $offset);
                     }
-                    $total_items = $db->query("SELECT COUNT(*) FROM videos v" . $where_clause)->fetch_row()[0];
-                    $total_pages = ceil($total_items / $items_per_page);
-                    $videos = $db->query("SELECT v.id, v.thumbnail, v.title, u.username, v.views, v.upload_date FROM videos v JOIN users u ON v.user_id = u.id" . $where_clause . " ORDER BY v.upload_date DESC LIMIT $items_per_page OFFSET $offset");
+                    $vl_stmt->execute();
+                    $videos = $vl_stmt->get_result();
+                    $vl_stmt->close();
             ?>
                     <h1 class="text-3xl font-bold mb-6">Video Moderation</h1>
                     <form class="mb-4"><input type="hidden" name="section" value="videos"><input type="text" name="search" placeholder="Search by video title..." class="p-2 border rounded" value="<?php echo htmlspecialchars($search); ?>"><button type="submit" class="p-2 bg-blue-500 text-white rounded">Search</button></form>
@@ -466,7 +487,7 @@ $offset = ($current_page - 1) * $items_per_page;
                             <tbody>
                                 <?php while ($video = $videos->fetch_assoc()) : ?>
                                     <tr>
-                                        <td><img src="uploads/<?php echo htmlspecialchars($video['thumbnail']); ?>" class="w-24 h-auto" onerror="this.style.display='none'"></td>
+                                        <td><img src="<?php echo UPLOADS_URL . htmlspecialchars($video['thumbnail']); ?>" class="w-24 h-auto rounded" onerror="this.style.display='none'" loading="lazy"></td>
                                         <td><?php echo htmlspecialchars($video['title']); ?></td>
                                         <td><?php echo htmlspecialchars($video['username']); ?></td>
                                         <td><?php echo number_format($video['views']); ?></td>
@@ -492,14 +513,26 @@ $offset = ($current_page - 1) * $items_per_page;
                 <?php break;
 
                 case 'comments':
-                    $search = $_GET['search'] ?? '';
-                    $where_clause = '';
+                    $search = trim($_GET['search'] ?? '');
                     if ($search) {
-                        $where_clause = " WHERE c.comment LIKE '%" . $db->real_escape_string($search) . "%'";
+                        $search_term = '%' . $search . '%';
+                        $cc_stmt = $db->prepare("SELECT COUNT(*) FROM comments c WHERE c.comment LIKE ?");
+                        $cc_stmt->bind_param("s", $search_term);
+                        $cc_stmt->execute();
+                        $total_items = (int)$cc_stmt->get_result()->fetch_row()[0];
+                        $cc_stmt->close();
+                        $total_pages = (int)ceil($total_items / $items_per_page);
+                        $cl_stmt = $db->prepare("SELECT c.id, c.comment, u.username, v.title AS video_title, c.comment_date FROM comments c JOIN users u ON c.user_id=u.id JOIN videos v ON c.video_id=v.id WHERE c.comment LIKE ? ORDER BY c.comment_date DESC LIMIT ? OFFSET ?");
+                        $cl_stmt->bind_param("sii", $search_term, $items_per_page, $offset);
+                    } else {
+                        $total_items = (int)$db->query("SELECT COUNT(*) FROM comments")->fetch_row()[0];
+                        $total_pages = (int)ceil($total_items / $items_per_page);
+                        $cl_stmt = $db->prepare("SELECT c.id, c.comment, u.username, v.title AS video_title, c.comment_date FROM comments c JOIN users u ON c.user_id=u.id JOIN videos v ON c.video_id=v.id ORDER BY c.comment_date DESC LIMIT ? OFFSET ?");
+                        $cl_stmt->bind_param("ii", $items_per_page, $offset);
                     }
-                    $total_items = $db->query("SELECT COUNT(*) FROM comments c" . $where_clause)->fetch_row()[0];
-                    $total_pages = ceil($total_items / $items_per_page);
-                    $comments = $db->query("SELECT c.id, c.comment, u.username, v.title as video_title, c.comment_date FROM comments c JOIN users u ON c.user_id=u.id JOIN videos v ON c.video_id=v.id" . $where_clause . " ORDER BY c.comment_date DESC LIMIT $items_per_page OFFSET $offset");
+                    $cl_stmt->execute();
+                    $comments = $cl_stmt->get_result();
+                    $cl_stmt->close();
             ?>
                     <h1 class="text-3xl font-bold mb-6">Comment Moderation</h1>
                     <form class="mb-4"><input type="hidden" name="section" value="comments"><input type="text" name="search" placeholder="Search in comments..." class="p-2 border rounded" value="<?php echo htmlspecialchars($search); ?>"><button type="submit" class="p-2 bg-blue-500 text-white rounded">Search</button></form>

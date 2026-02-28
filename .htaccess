@@ -1,0 +1,47 @@
+# Apache — security & CORS headers for MyTube
+# Place this file in the web root alongside index.php.
+# Requires mod_headers to be enabled on your server.
+
+<IfModule mod_headers.c>
+    # Prevent clickjacking
+    Header always set X-Frame-Options "SAMEORIGIN"
+
+    # Basic XSS protection for older browsers
+    Header always set X-XSS-Protection "1; mode=block"
+
+    # Prevent MIME-type sniffing
+    Header always set X-Content-Type-Options "nosniff"
+
+    # Restrict referrer information
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+
+    # Remove server version disclosure
+    Header always unset X-Powered-By
+    Header always unset Server
+</IfModule>
+
+# Deny direct access to the includes/ directory
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Block direct access to includes/
+    RewriteRule ^includes/ - [F,L]
+
+    # Block access to config.php (shouldn't be web-accessible anyway,
+    # but defence-in-depth doesn't hurt)
+    RewriteRule ^config\.php$ - [F,L]
+</IfModule>
+
+# Deny directory listing
+Options -Indexes
+
+# Protect uploads directory — only allow known media MIME types
+<IfModule mod_mime.c>
+    AddType video/mp4  .mp4
+    AddType video/webm .webm
+    AddType video/ogg  .ogg
+    AddType image/jpeg .jpg .jpeg
+    AddType image/png  .png
+    AddType image/gif  .gif
+    AddType image/webp .webp
+</IfModule>

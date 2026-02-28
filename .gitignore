@@ -1,0 +1,22 @@
+# =============================================================================
+# MyTube — .gitignore
+# =============================================================================
+
+# Local configuration (contains DB credentials)
+config.php
+
+# User-uploaded media
+uploads/*
+!uploads/.gitkeep
+
+# PHP dependency cache
+vendor/
+
+# OS / editor artefacts
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
