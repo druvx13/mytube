@@ -1001,7 +1001,11 @@ if (isset($_GET['channel'])) {
                         <input type="hidden" name="action" value="upload_video">
                         <div class="mb-4"><label for="title" class="block font-bold mb-1">Title</label><input type="text" id="title" name="title" class="w-full input-classic" required></div>
                         <div class="mb-4"><label for="description" class="block font-bold mb-1">Description</label><textarea id="description" name="description" class="w-full input-classic" rows="5"></textarea></div>
-                        <div class="mb-4"><label for="video_file" class="block font-bold mb-1">Video File (MP4, WebM, OGG)</label><input type="file" id="video_file" name="video_file" class="w-full" accept="video/mp4,video/webm,video/ogg" required></div>
+                        <div class="mb-4">
+                            <label for="video_file" class="block font-bold mb-1">Video File (MP4, WebM, OGG)</label>
+                            <div id="videoDropZone" class="mb-2 border-2 border-dashed border-gray-400 rounded p-4 text-center text-sm text-gray-600 cursor-pointer">Drag & drop a video file here, or click to browse.</div>
+                            <input type="file" id="video_file" name="video_file" class="w-full" accept="video/mp4,video/webm,video/ogg" required>
+                        </div>
                         <div id="thumbnailChooser" class="hidden mb-4">
                             <label class="block font-bold mb-2">Choose Thumbnail</label>
                             <div class="flex justify-center mb-2"><img id="thumbnailPreview" alt="Video frame preview" class="border-2 border-gray-400" style="width:240px; height:135px; object-fit:cover;"></div>
@@ -1205,6 +1209,7 @@ if (isset($_GET['channel'])) {
         }
         if (document.getElementById('thumbnailChooser')) {
             const videoFileInput = document.getElementById('video_file'),
+                videoDropZone = document.getElementById('videoDropZone'),
                 thumbnailChooser = document.getElementById('thumbnailChooser'),
                 videoPreview = document.getElementById('videoPreview'),
                 canvas = document.getElementById('canvas'),
@@ -1217,13 +1222,45 @@ if (isset($_GET['channel'])) {
                     videoPreview.currentTime = time;
                 }
             };
-            videoFileInput.addEventListener('change', (event) => {
-                const file = event.target.files[0];
+            const loadVideoPreview = (file) => {
                 if (file) {
                     videoPreview.src = URL.createObjectURL(file);
                     thumbnailChooser.classList.remove('hidden');
                 }
+            };
+            videoFileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                loadVideoPreview(file);
             });
+            if (videoDropZone) {
+                const activateDropZone = (active) => {
+                    videoDropZone.classList.toggle('border-blue-600', active);
+                    videoDropZone.classList.toggle('bg-blue-50', active);
+                };
+                videoDropZone.addEventListener('click', () => videoFileInput.click());
+                ['dragenter', 'dragover'].forEach((eventName) => {
+                    videoDropZone.addEventListener(eventName, (event) => {
+                        event.preventDefault();
+                        activateDropZone(true);
+                    });
+                });
+                ['dragleave', 'dragend', 'drop'].forEach((eventName) => {
+                    videoDropZone.addEventListener(eventName, (event) => {
+                        event.preventDefault();
+                        activateDropZone(false);
+                    });
+                });
+                videoDropZone.addEventListener('drop', (event) => {
+                    const droppedFile = event.dataTransfer && event.dataTransfer.files ? event.dataTransfer.files[0] : null;
+                    if (!droppedFile || !droppedFile.type.startsWith('video/')) {
+                        return;
+                    }
+                    const transfer = new DataTransfer();
+                    transfer.items.add(droppedFile);
+                    videoFileInput.files = transfer.files;
+                    loadVideoPreview(droppedFile);
+                });
+            }
             videoPreview.addEventListener('loadedmetadata', () => {
                 canvas.width = videoPreview.videoWidth;
                 canvas.height = videoPreview.videoHeight;
