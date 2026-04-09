@@ -1003,7 +1003,7 @@ if (isset($_GET['channel'])) {
                         <div class="mb-4"><label for="description" class="block font-bold mb-1">Description</label><textarea id="description" name="description" class="w-full input-classic" rows="5"></textarea></div>
                         <div class="mb-4">
                             <label for="video_file" class="block font-bold mb-1">Video File (MP4, WebM, OGG)</label>
-                            <div id="videoDropZone" class="mb-2 border-2 border-dashed border-gray-400 rounded p-4 text-center text-sm text-gray-600 cursor-pointer">Drag & drop a video file here, or click to browse.</div>
+                            <div id="videoDropZone" class="mb-2 border-2 border-dashed border-gray-400 rounded p-4 text-center text-sm text-gray-600 cursor-pointer" role="button" tabindex="0" aria-label="Drag and drop a video file or press Enter to browse for a video file">Drag & drop a video file here, or click to browse.</div>
                             <input type="file" id="video_file" name="video_file" class="w-full" accept="video/mp4,video/webm,video/ogg" required>
                         </div>
                         <div id="thumbnailChooser" class="hidden mb-4">
@@ -1238,6 +1238,12 @@ if (isset($_GET['channel'])) {
                     videoDropZone.classList.toggle('bg-blue-50', active);
                 };
                 videoDropZone.addEventListener('click', () => videoFileInput.click());
+                videoDropZone.addEventListener('keydown', (event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        videoFileInput.click();
+                    }
+                });
                 ['dragenter', 'dragover'].forEach((eventName) => {
                     videoDropZone.addEventListener(eventName, (event) => {
                         event.preventDefault();
